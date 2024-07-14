@@ -31,12 +31,12 @@ wss.on("connection", (ws: WebSocket) => {
   console.log("New WebSocket connection");
 
   ws.on("message", async (message: Buffer) => {
-    console.log("Received message of length:", message.length);
+    // console.log("Received message of length:", message.length);
 
     // Process the image buffer for object detection
     try {
       const detectionResults = await detectObjects(message);
-      console.log("Object detection result:", detectionResults);
+      // console.log("Object detection result:", detectionResults);
 
       // Send the result to the WebSocket client if objects are detected
       if (detectionResults.length > 0) {

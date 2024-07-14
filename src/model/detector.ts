@@ -2,7 +2,7 @@ import * as tf from "@tensorflow/tfjs-node";
 import * as cocoSsd from "@tensorflow-models/coco-ssd";
 import * as jpeg from "jpeg-js";
 
-const readImage = (buf: Buffer) => {
+const readImage = async (buf: Buffer) => {
   const pixels = jpeg.decode(buf, { useTArray: true });
 
   const numChannels = 3;
@@ -24,7 +24,7 @@ const readImage = (buf: Buffer) => {
 };
 
 const detectObjects = async (imageBuffer: Buffer) => {
-  const imageTensor = readImage(imageBuffer);
+  const imageTensor = await readImage(imageBuffer);
   let predictions;
   try {
     const model = await cocoSsd.load();
