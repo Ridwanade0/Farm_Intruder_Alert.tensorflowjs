@@ -1,52 +1,59 @@
-import * as tf from "@tensorflow/tfjs-node";
-import * as cocoSsd from "@tensorflow-models/coco-ssd";
-import * as fs from "fs";
-import * as jpeg from "jpeg-js";
+import express, { Request, Response } from "express";
+import dotenv from "dotenv";
+import path from "path";
+import { createServer } from "http";
+import { WebSocketServer, WebSocket } from "ws";
+import detectObjects from "./model/detector"; // Assuming `readImage` function is imported from detector.ts
 
-const readImage = (path: string) => {
-    const buf = fs.readFileSync(path);
-    console.log(buf.toJSON())
-  const pixels = jpeg.decode(buf, { useTArray: true });
+dotenv.config();
 
-  const numChannels = 3;
-  const numPixels = pixels.width * pixels.height;
-  const values = new Int32Array(numPixels * numChannels);
-  console.log(numPixels, "values.length");
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-  for (let i = 0; i < numPixels; i++) {
-    for (let c = 0; c < numChannels; ++c) {
-      values[i * numChannels + c] = pixels.data[i * 4 + c];
+// Create an HTTP server and attach the Express app
+const server = createServer(app);
+
+// Set EJS as the view engine
+app.set("view engine", "ejs");
+app.set("views", path.join(__dirname, "views"));
+
+// Define routes
+app.get("/", (req: Request, res: Response) => {
+  res.render("index", {
+    title: "Home Page",
+  });
+});
+
+// WebSocket server setup
+const wss = new WebSocketServer({ server });
+
+wss.on("connection", (ws: WebSocket) => {
+  console.log("New WebSocket connection");
+
+  ws.on("message", async (message: Buffer) => {
+    console.log("Received message of length:", message.length);
+
+    // Process the image buffer for object detection
+    try {
+      const detectionResults = await detectObjects(message);
+      console.log("Object detection result:", detectionResults);
+
+      // Send the result to the WebSocket client if objects are detected
+      if (detectionResults.length > 0) {
+        ws.send(JSON.stringify(detectionResults));
+      }
+    } catch (err) {
+      console.error("Error during object detection:", err);
+      ws.send(JSON.stringify({ error: "Object detection failed" }));
     }
-  }
+  });
 
-  const tensor = tf.tensor3d(
-    values,
-    [pixels.height, pixels.width, numChannels],
-    "int32"
-  );
-  return tensor;
-};
+  ws.on("close", () => {
+    console.log("WebSocket connection closed");
+  });
+});
 
-const detectObjects = async (imagePath: string) => {
-  const imageTensor = readImage(imagePath);
-  try {
-    const model = await cocoSsd.load();
-    const predictions = await model.detect(imageTensor);
-
-    // Log the first prediction class and score percentage
-    if (predictions.length > 0) {
-      console.log(
-        "Predictions:",
-        predictions[0].class,
-        predictions[0].score * 100
-      );
-    } else {
-      console.log("No objects detected.");
-    }
-  } finally {
-    // Dispose of the tensor to free memory
-    imageTensor.dispose();
-  }
-};
-
-detectObjects("./src/image.jpg");
+// Start the server
+server.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
