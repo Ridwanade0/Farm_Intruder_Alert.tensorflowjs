@@ -4,12 +4,13 @@ const App = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isCameraOn, setIsCameraOn] = useState(false);
-  const [ws, setWs] = useState<WebSocket | null>(null); // State to hold WebSocket connection
-  const [frameData, setFrameData] = useState<Uint8Array | null>(null);
+  const [ws, setWs] = useState<WebSocket | null>(null);
+  const [predictions, setPredictions] = useState<any[]>([]);
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
 
   useEffect(() => {
-    // Connect to WebSocket server
-    const newWs = new WebSocket("ws://localhost:3000"); // Replace with your WebSocket server URL
+    const newWs = new WebSocket("ws://localhost:3000");
 
     newWs.onopen = () => {
       console.log("WebSocket connected");
@@ -24,28 +25,43 @@ const App = () => {
       console.error("WebSocket error: ", error);
     };
 
-    // Handle incoming messages from WebSocket server
     newWs.onmessage = (event) => {
-      console.log("WebSocket message received: ", event.data);
-      // Handle incoming messages as needed
+      const data = JSON.parse(event.data);
+      setPredictions(data);
     };
 
     return () => {
-      // Clean up WebSocket connection on component unmount
       newWs.close();
     };
   }, []);
 
-  const handleStartCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-        setIsCameraOn(true);
+  useEffect(() => {
+    const getDevices = async () => {
+      const mediaDevices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = mediaDevices.filter(device => device.kind === "videoinput");
+      setDevices(videoDevices);
+      if (videoDevices.length > 0) {
+        setSelectedDeviceId(videoDevices[0].deviceId);
       }
-    } catch (err) {
-      console.error("Error accessing the camera: ", err);
+    };
+
+    getDevices();
+  }, []);
+
+  const handleStartCamera = async () => {
+    if (selectedDeviceId) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { deviceId: selectedDeviceId } 
+        });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play();
+          setIsCameraOn(true);
+        }
+      } catch (err) {
+        console.error("Error accessing the camera: ", err);
+      }
     }
   };
 
@@ -70,18 +86,14 @@ const App = () => {
 
         context.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
 
-        // Convert canvas image to JPEG data
         const jpegData = canvas.toDataURL("image/jpeg");
-
-        // Convert JPEG data to Uint8Array
-        const base64String = jpegData.split(",")[1]; // Remove the data URL prefix
+        const base64String = jpegData.split(",")[1];
         const decodedData = atob(base64String);
         const dataArray = new Uint8Array(decodedData.length);
         for (let i = 0; i < decodedData.length; ++i) {
           dataArray[i] = decodedData.charCodeAt(i);
         }
 
-        // Send frame data to WebSocket server
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(dataArray);
         }
@@ -89,16 +101,44 @@ const App = () => {
     }
   };
 
+  const drawBoundingBoxes = (predictions: any[]) => {
+    if (canvasRef.current && videoRef.current) {
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext("2d");
+
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+
+        predictions.forEach((prediction) => {
+          const [x, y, width, height] = prediction.bbox;
+
+          ctx.strokeStyle = "red";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x, y, width, height);
+
+          ctx.fillStyle = "red";
+          ctx.font = "16px Arial";
+          ctx.fillText(
+            `Class: ${prediction.class}, Score: ${(prediction.score * 100).toFixed(2)}%`,
+            x + 5,
+            y + 20
+          );
+        });
+      }
+    }
+  };
 
   useEffect(() => {
     const interval = setInterval(() => {
       if (isCameraOn) {
         handleVideoProcessing();
+        drawBoundingBoxes(predictions); // Draw bounding boxes only when new predictions are available
       }
-    }, 500); // Process frame every 1/2 second
+    }, 100);
 
     return () => clearInterval(interval);
-  }, [isCameraOn, ws]);
+  }, [isCameraOn, ws, predictions]);
 
   return (
     <div className="">
@@ -119,15 +159,29 @@ const App = () => {
           >
             Stop Camera
           </button>
+          <select 
+            onChange={(e) => setSelectedDeviceId(e.target.value)} 
+            disabled={isCameraOn}
+            className="rounded-lg p-2"
+          >
+            {devices.map(device => (
+              <option key={device.deviceId} value={device.deviceId}>
+                {device.label || `Camera ${device.deviceId}`}
+              </option>
+            ))}
+          </select>
         </div>
-        <div className="w-full h-[calc(100vh-300px)] bg-slate-200 border">
+        <div className="w-full h-[calc(100vh-300px)] bg-slate-200 border relative">
           <video
             ref={videoRef}
             className="w-full border h-full"
             autoPlay
           ></video>
+          <canvas
+            ref={canvasRef}
+            className="absolute top-0 left-0 w-full h-full"
+          ></canvas>
         </div>
-        <canvas ref={canvasRef} className="hidden"></canvas>
       </div>
     </div>
   );
