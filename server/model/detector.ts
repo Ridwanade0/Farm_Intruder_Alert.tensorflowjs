@@ -11,7 +11,8 @@ const loadModel = async () => {
   }
 };
 
-const readImage = (buf: Buffer) => {
+
+const readImage = (buf: Buffer): tf.Tensor3D => {
   const pixels = jpeg.decode(buf, { useTArray: true });
 
   const numChannels = 3;
@@ -33,13 +34,14 @@ const readImage = (buf: Buffer) => {
 };
 
 const detectObjects = async (imageBuffer: Buffer) => {
-  await loadModel();
-  const imageTensor = readImage(imageBuffer);
+  await loadModel(); 
+
+  const imageTensor = readImage(imageBuffer); 
   let predictions;
   try {
     predictions = await model!.detect(imageTensor);
   } finally {
-    imageTensor.dispose();
+    tf.dispose(imageTensor); 
   }
   return predictions;
 };
