@@ -120,7 +120,7 @@ const App = () => {
           ctx.fillStyle = "red";
           ctx.font = "16px Arial";
           ctx.fillText(
-            `Class: ${prediction.class}, Score: ${(prediction.score * 100).toFixed(2)}%`,
+            `Class: ${prediction.class}, Confidence: ${(prediction.score * 100).toFixed(2)}%`,
             x + 5,
             y + 20
           );
